@@ -503,8 +503,45 @@ document.addEventListener('DOMContentLoaded', async () => {
     const username = usernameInput.value.trim();
     const password = passwordInput.value;
 
+    // Checagem de Rate Limit / Bloqueio Ativo
+    const now = Date.now();
+    const lockoutUntil = parseInt(localStorage.getItem('login_lockout_until') || '0');
+    if (lockoutUntil && now < lockoutUntil) {
+      const secondsLeft = Math.ceil((lockoutUntil - now) / 1000);
+      loginError.textContent = `Muitas tentativas incorretas. Login bloqueado temporariamente por mais ${secondsLeft} segundos.`;
+      showToast('Login temporariamente bloqueado.', '✗');
+      return;
+    }
+
+    function handleLoginFailure() {
+      let attempts = parseInt(localStorage.getItem('login_failed_attempts') || '0');
+      attempts++;
+      
+      if (attempts >= 3) {
+        // Bloqueia por 60 segundos
+        const blockUntil = Date.now() + 60000;
+        localStorage.setItem('login_lockout_until', blockUntil.toString());
+        localStorage.setItem('login_failed_attempts', '0');
+        loginError.textContent = 'Muitas tentativas incorretas. Login bloqueado por 1 minuto.';
+        showToast('Login bloqueado por 1 minuto.', '✗');
+      } else {
+        localStorage.setItem('login_failed_attempts', attempts.toString());
+        loginError.textContent = `Usuário ou senha incorretos. Restam ${3 - attempts} tentativas.`;
+        showToast('Credenciais incorretas.', '✗');
+      }
+    }
+
+    function handleLoginSuccess() {
+      // Limpa os estados de falha e bloqueio
+      localStorage.removeItem('login_failed_attempts');
+      localStorage.removeItem('login_lockout_until');
+      loginError.textContent = '';
+      showToast('Login realizado!');
+      loginForm.reset();
+      showView('dashboard');
+    }
+
     if (isFirebaseActive && auth) {
-      // Mapeia usuário sem '@' para um e-mail virtual para o Firebase Auth
       let email = username;
       if (!username.includes('@')) {
         email = `${username.toLowerCase()}@portalfinancie.com`;
@@ -514,24 +551,17 @@ document.addEventListener('DOMContentLoaded', async () => {
         loginError.textContent = '';
         showToast('Validando credenciais...', 'ℹ');
         await signInWithEmailAndPassword(auth, email, password);
-        showToast('Login realizado!');
-        loginForm.reset();
-        showView('dashboard');
+        handleLoginSuccess();
       } catch (error) {
         console.error("Erro de Autenticação Firebase: ", error);
-        loginError.textContent = 'Usuário ou senha incorretos.';
-        showToast('Falha no login.', '✗');
+        handleLoginFailure();
       }
     } else {
       // Fallback local caso Firebase esteja inativo
       if (username.toLowerCase() === 'alessandro' && password === 'Slkt@2024') {
-        loginError.textContent = '';
-        localStorage.setItem(USER_SESSION_KEY, JSON.stringify({ username }));
-        showView('dashboard');
-        showToast('Login realizado!');
-        loginForm.reset();
+        handleLoginSuccess();
       } else {
-        loginError.textContent = 'Usuário ou senha incorretos.';
+        handleLoginFailure();
       }
     }
   });
