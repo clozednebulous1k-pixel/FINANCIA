@@ -1,0 +1,15 @@
+{
+  "version": 2,
+  "cleanUrls": true,
+  "builds": [
+    { "src": "api/config.js", "use": "@vercel/node" },
+    { "src": "index.html", "use": "@vercel/static" },
+    { "src": "style.css", "use": "@vercel/static" },
+    { "src": "app.js", "use": "@vercel/static" },
+    { "src": "firebase-config.js", "use": "@vercel/static" }
+  ],
+  "routes": [
+    { "src": "/api/config", "dest": "api/config.js" },
+    { "src": "/(.*)", "dest": "/$1" }
+  ]
+}
