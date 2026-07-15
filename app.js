@@ -1,9 +1,11 @@
 // Import Firebase SDK v10 modules from CDN dynamically
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js';
 import { getFirestore, collection, addDoc, onSnapshot, query, orderBy, doc, updateDoc } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js';
+import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js';
 
 // Database Instance variables
 let db = null;
+let auth = null;
 let isFirebaseActive = false;
 
 // Async function to load config and initialize Firebase Firestore
@@ -37,6 +39,7 @@ async function loadConfigAndInitialize() {
     try {
       const app = initializeApp(finalConfig);
       db = getFirestore(app);
+      auth = getAuth(app);
       console.log("🔥 Firebase inicializado com sucesso!");
     } catch (error) {
       console.error("Erro ao inicializar o Firebase. Ativando fallback local:", error);
@@ -322,17 +325,26 @@ document.addEventListener('DOMContentLoaded', async () => {
     btnLogout.style.display = 'none';
     userBadge.style.display = 'none';
 
-    const session = localStorage.getItem(USER_SESSION_KEY);
+    // Verify if seller is logged in (via Firebase Auth or Local fallback)
+    const isFirebaseUserLoggedIn = isFirebaseActive && auth && auth.currentUser;
+    const isLocalUserLoggedIn = !isFirebaseActive && localStorage.getItem(USER_SESSION_KEY);
+    const isLoggedIn = isFirebaseUserLoggedIn || isLocalUserLoggedIn;
+    
+    let loggedInUsername = '';
+    if (isFirebaseUserLoggedIn) {
+      const emailPrefix = auth.currentUser.email.split('@')[0];
+      loggedInUsername = emailPrefix.toLowerCase() === 'alessandro' ? 'Alessandro' : emailPrefix;
+    } else if (isLocalUserLoggedIn) {
+      loggedInUsername = JSON.parse(localStorage.getItem(USER_SESSION_KEY)).username;
+    }
 
     if (viewName === 'form') {
       viewForm.classList.add('active');
       formPanel.style.display = 'block';
       successPanel.style.display = 'none';
       
-      if (session) {
-        // Logged in seller can switch between Dashboard and Form
-        const user = JSON.parse(session);
-        userBadge.textContent = `Olá, ${user.username}`;
+      if (isLoggedIn) {
+        userBadge.textContent = `Olá, ${loggedInUsername}`;
         userBadge.style.display = 'block';
         btnLogout.style.display = 'block';
         // Show button to go to dashboard
@@ -346,12 +358,11 @@ document.addEventListener('DOMContentLoaded', async () => {
       btnBackToForm.textContent = 'Voltar para Simulação';
       btnBackToForm.style.display = 'block';
     } else if (viewName === 'dashboard') {
-      if (!session) {
+      if (!isLoggedIn) {
         showView('login');
         return;
       }
-      const user = JSON.parse(session);
-      userBadge.textContent = `Olá, ${user.username}`;
+      userBadge.textContent = `Olá, ${loggedInUsername}`;
       userBadge.style.display = 'block';
       
       viewDashboard.classList.add('active');
@@ -375,16 +386,25 @@ document.addEventListener('DOMContentLoaded', async () => {
   btnSellerAccess.addEventListener('click', () => showView('login'));
   btnBackToForm.addEventListener('click', () => {
     const isDashboardActive = viewDashboard.classList.contains('active');
-    const session = localStorage.getItem(USER_SESSION_KEY);
+    const isFirebaseUserLoggedIn = isFirebaseActive && auth && auth.currentUser;
+    const isLocalUserLoggedIn = !isFirebaseActive && localStorage.getItem(USER_SESSION_KEY);
+    const isLoggedIn = isFirebaseUserLoggedIn || isLocalUserLoggedIn;
     
     if (isDashboardActive || viewLogin.classList.contains('active')) {
       showView('form');
-    } else if (session) {
+    } else if (isLoggedIn) {
       showView('dashboard');
     }
   });
 
-  btnLogout.addEventListener('click', () => {
+  btnLogout.addEventListener('click', async () => {
+    if (isFirebaseActive && auth) {
+      try {
+        await signOut(auth);
+      } catch (err) {
+        console.error("Erro no signOut do Firebase:", err);
+      }
+    }
     localStorage.removeItem(USER_SESSION_KEY);
     if (unsubscribeDb) {
       unsubscribeDb();
@@ -478,19 +498,41 @@ document.addEventListener('DOMContentLoaded', async () => {
   });
 
   // Seller Login Submit
-  loginForm.addEventListener('submit', (e) => {
+  loginForm.addEventListener('submit', async (e) => {
     e.preventDefault();
     const username = usernameInput.value.trim();
     const password = passwordInput.value;
 
-    if (username.toLowerCase() === 'alessandro' && password === 'Slkt@2024') {
-      loginError.textContent = '';
-      localStorage.setItem(USER_SESSION_KEY, JSON.stringify({ username }));
-      showView('dashboard');
-      showToast('Login realizado!');
-      loginForm.reset();
+    if (isFirebaseActive && auth) {
+      // Mapeia usuário sem '@' para um e-mail virtual para o Firebase Auth
+      let email = username;
+      if (!username.includes('@')) {
+        email = `${username.toLowerCase()}@portalfinancie.com`;
+      }
+      
+      try {
+        loginError.textContent = '';
+        showToast('Validando credenciais...', 'ℹ');
+        await signInWithEmailAndPassword(auth, email, password);
+        showToast('Login realizado!');
+        loginForm.reset();
+        showView('dashboard');
+      } catch (error) {
+        console.error("Erro de Autenticação Firebase: ", error);
+        loginError.textContent = 'Usuário ou senha incorretos.';
+        showToast('Falha no login.', '✗');
+      }
     } else {
-      loginError.textContent = 'Usuário ou senha incorretos.';
+      // Fallback local caso Firebase esteja inativo
+      if (username.toLowerCase() === 'alessandro' && password === 'Slkt@2024') {
+        loginError.textContent = '';
+        localStorage.setItem(USER_SESSION_KEY, JSON.stringify({ username }));
+        showView('dashboard');
+        showToast('Login realizado!');
+        loginForm.reset();
+      } else {
+        loginError.textContent = 'Usuário ou senha incorretos.';
+      }
     }
   });
 
@@ -613,6 +655,21 @@ NOME LIMPO: ${p.cleanName.toUpperCase()}`;
     if (errSpan) errSpan.textContent = message;
   }
 
-  // Set initial view on load
-  showView('form');
+  // Set up Firebase Auth State Listener
+  if (isFirebaseActive && auth) {
+    onAuthStateChanged(auth, (user) => {
+      console.log("🔒 Estado do Auth alterado:", user ? "Vendedor Logado" : "Deslogado");
+      if (!user && viewDashboard.classList.contains('active')) {
+        showView('form');
+      } else {
+        const currentView = viewDashboard.classList.contains('active') 
+          ? 'dashboard' 
+          : (viewLogin.classList.contains('active') ? 'login' : 'form');
+        showView(currentView);
+      }
+    });
+  } else {
+    // Initial check for local session on load
+    showView('form');
+  }
 });
