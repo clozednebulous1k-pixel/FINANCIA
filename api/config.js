@@ -1,6 +1,6 @@
 module.exports = (req, res) => {
-  // Configuração de cabeçalhos de CORS (caso acesse de outro domínio durante testes)
-  res.setHeader('Access-Control-Allow-Credentials', true);
+  // Configuração de cabeçalhos de CORS (usando strings para evitar erros em versões mais antigas do Node)
+  res.setHeader('Access-Control-Allow-Credentials', 'true');
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS');
   res.setHeader(
@@ -9,7 +9,8 @@ module.exports = (req, res) => {
   );
 
   if (req.method === 'OPTIONS') {
-    res.status(200).end();
+    res.statusCode = 200;
+    res.end();
     return;
   }
 
@@ -30,9 +31,11 @@ module.exports = (req, res) => {
     config.projectId && 
     config.projectId !== "";
 
-  // Retorna a configuração como JSON
-  res.status(200).json({
+  // Retorna a configuração como JSON de forma nativa e ultra-estável
+  res.statusCode = 200;
+  res.setHeader('Content-Type', 'application/json; charset=utf-8');
+  res.end(JSON.stringify({
     config,
     isFirebaseConfigured
-  });
+  }));
 };
