@@ -176,6 +176,16 @@ const fallbackInterface = {
 // ==========================================
 // AUXILIARES DE FORMATAÇÃO E VALIDAÇÃO
 // ==========================================
+function escapeHTML(str) {
+  if (!str) return '';
+  return str
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+}
+
 function formatCPF(value) {
   return value
     .replace(/\D/g, '')
@@ -590,13 +600,16 @@ document.addEventListener('DOMContentLoaded', async () => {
       const dateObj = new Date(p.date);
       const formattedDate = dateObj.toLocaleDateString('pt-BR') + ' ' + dateObj.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
 
+      const escapedName = escapeHTML(p.fullName);
+      const escapedCpf = escapeHTML(p.cpf);
+      
       item.innerHTML = `
         <div class="list-item-header">
-          <div class="list-item-name" title="${p.fullName}">${p.fullName}</div>
+          <div class="list-item-name" title="${escapedName}">${escapedName}</div>
           <span class="badge badge-${p.status}">${p.status === 'pendente' ? 'Pendente' : p.status === 'aprovado' ? 'Aprovado' : 'Recusado'}</span>
         </div>
         <div class="list-item-meta">
-          <span>CPF: ${p.cpf}</span>
+          <span>CPF: ${escapedCpf}</span>
           <span>${formattedDate}</span>
         </div>
       `;
