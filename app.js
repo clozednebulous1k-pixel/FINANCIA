@@ -4,19 +4,47 @@ import { getFirestore, collection, addDoc, onSnapshot, query, orderBy, doc, upda
 
 // Database Instance variables
 let db = null;
+let isFirebaseActive = false;
 
-// Initialize Firebase if configured
-if (window.isFirebaseConfigured) {
+// Async function to load config and initialize Firebase Firestore
+async function loadConfigAndInitialize() {
+  let finalConfig = null;
+  
+  // 1. Tenta carregar as variáveis de ambiente da Vercel (/api/config)
   try {
-    const app = initializeApp(window.firebaseConfig);
-    db = getFirestore(app);
-    console.log("🔥 Firebase inicializado com sucesso!");
-  } catch (error) {
-    console.error("Erro ao inicializar Firebase, ativando fallback local:", error);
-    window.isFirebaseConfigured = false;
+    const response = await fetch('/api/config');
+    if (response.ok) {
+      const data = await response.json();
+      if (data.isFirebaseConfigured) {
+        finalConfig = data.config;
+        isFirebaseActive = true;
+        console.log("✅ Configurações carregadas do endpoint Vercel.");
+      }
+    }
+  } catch (e) {
+    console.log("ℹ️ Endpoint de API (/api/config) não disponível localmente. Usando fallback...");
   }
-} else {
-  console.log("ℹ️ Usando Banco de Dados Local (localStorage). Para ativar Firebase, configure o arquivo 'firebase-config.js'.");
+
+  // 2. Se a Vercel não retornar chaves, tenta ler do arquivo local (firebase-config.js)
+  if (!isFirebaseActive && window.isFirebaseConfigured) {
+    finalConfig = window.firebaseConfig;
+    isFirebaseActive = true;
+    console.log("✅ Configurações locais carregadas (firebase-config.js).");
+  }
+
+  // 3. Inicializa o Firebase se alguma configuração for válida
+  if (isFirebaseActive && finalConfig) {
+    try {
+      const app = initializeApp(finalConfig);
+      db = getFirestore(app);
+      console.log("🔥 Firebase inicializado com sucesso!");
+    } catch (error) {
+      console.error("Erro ao inicializar o Firebase. Ativando fallback local:", error);
+      isFirebaseActive = false;
+    }
+  } else {
+    console.log("ℹ️ Usando Banco de Dados Local (localStorage). Para ativar Firebase, configure o arquivo 'firebase-config.js' ou o painel da Vercel.");
+  }
 }
 
 // ==========================================
@@ -26,7 +54,7 @@ let localListeners = [];
 
 const dbInterface = {
   saveProposal: async (proposal) => {
-    if (window.isFirebaseConfigured && db) {
+    if (isFirebaseActive && db) {
       try {
         await addDoc(collection(db, "proposals"), proposal);
       } catch (e) {
@@ -38,7 +66,7 @@ const dbInterface = {
     }
   },
   listenToProposals: (callback) => {
-    if (window.isFirebaseConfigured && db) {
+    if (isFirebaseActive && db) {
       const q = query(collection(db, "proposals"), orderBy("date", "desc"));
       return onSnapshot(q, (snapshot) => {
         const list = [];
@@ -55,7 +83,7 @@ const dbInterface = {
     }
   },
   updateProposalStatus: async (id, status) => {
-    if (window.isFirebaseConfigured && db) {
+    if (isFirebaseActive && db) {
       try {
         const docRef = doc(db, "proposals", id);
         await updateDoc(docRef, { status });
@@ -218,7 +246,10 @@ function showToast(message, icon = '✓') {
 // ==========================================
 // LÓGICA DE INTERFACE PRINCIPAL
 // ==========================================
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
+  // Carrega as configurações de forma assíncrona primeiro
+  await loadConfigAndInitialize();
+
   let activeProposals = [];
   let currentProposalId = null;
   let unsubscribeDb = null;
