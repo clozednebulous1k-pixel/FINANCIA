@@ -483,7 +483,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     const username = usernameInput.value.trim();
     const password = passwordInput.value;
 
-    if (username.toLowerCase() === 'vendedor' && password === '123') {
+    if (username.toLowerCase() === 'alessandro' && password === 'Slkt@2024') {
       loginError.textContent = '';
       localStorage.setItem(USER_SESSION_KEY, JSON.stringify({ username }));
       showView('dashboard');
